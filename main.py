@@ -1,29 +1,37 @@
-import pandas as pd
-import torch
-import torchvision
-import numpy as np
-from sklearn.model_selection import train_test_split
-import ssl
-import csv
-import torch.utils.data as data_utils
-from torch.utils.data import DataLoader, ConcatDataset
-from sklearn.model_selection import KFold
+import time
 
-line = '\n-----------------------------------------------------------------------'
+import numpy as np
+
+import torch
+import torch.utils.data as data_utils
+
+from sklearn.model_selection import train_test_split
+
+import pandas as pd
+from matplotlib import pyplot as plt
+from rich.console import Console
+from tqdm import tqdm
+
+console = Console()
+
+
+# from rich_dataframe import prettify
 
 class CNN(torch.nn.Module):
     def __init__(self):
         super().__init__()
         self.model = torch.nn.Sequential(
-
+            # input 1 x (24 x 32) output 24 x (24 x 32), kernel_size= 2
             torch.nn.Conv2d(in_channels=1, out_channels=32, kernel_size=(3, 2), padding=1),
-            torch.nn.BatchNorm2d(32),
+            # torch.nn.BatchNorm2d(32),
             torch.nn.ReLU(),
-            torch.nn.MaxPool2d(kernel_size=2),
+            # Input = 24 x 24 x 32, Output = 24 x 12 x 16
+            # torch.nn.MaxPool2d(kernel_size=2),
+            torch.nn.AvgPool2d(kernel_size=2),
 
             torch.nn.Conv2d(in_channels=32, out_channels=64, kernel_size=(3, 2), padding=1),
             # torch.nn.BatchNorm2d(64),
-            # torch.nn.Dropout(0.25),
+            # torch.nn.Dropout(0.1),
             torch.nn.ReLU(),
             torch.nn.MaxPool2d(kernel_size=2),
 
@@ -42,206 +50,207 @@ class CNN(torch.nn.Module):
         return self.model(x)
 
 
-# list of all data
-x_train = []
-x_test = []
+class dataUitls:
+    def __init__(self, file_train, file_test):
+        self.x_train = []
+        self.x_test = []
+        self.y_train = []
+        self.y_test = []
 
-y_train = []
-y_test = []
+        self.testing_files = [i for i in file_test]
+        self.training_files = [i for i in file_train]
 
+        self.files = self.testing_files + self.training_files
 
+        self.x_trainImages = []
+        self.x_testImages = []
+        self.y_trainLabels = []
+        self.y_testLabels = []
 
+    def LoadingData(self):
+        # reading the csv files testings set
+        console.print('Loading data...\n')
+        for i in self.files:
+            if (i in self.training_files):
+                # training
+                df = pd.read_csv(f'.\\Dataset\\{i}.csv', encoding="utf8",
+                                 on_bad_lines='warn')
+                for row in tqdm(range(len(df)), desc=f"Loading {i}\t", total=len(df), unit=" rows"):
+                    self.y_train.append(df.iloc[row, -1])
+                    self.x_train.append(df.iloc[row, 1:-1])
+            else:
+                # testing
+                df = pd.read_csv(f'.\\Dataset\\{i}.csv', encoding="utf8",
+                                 on_bad_lines='warn')
+                for row in tqdm(range(len(df)), desc=f"Loading {i}\t", total=len(df), unit=" rows"):
+                    self.y_test.append(df.iloc[row, -1])
+                    self.x_test.append(df.iloc[row, 1:-1])
 
-lines = '\n-----------------------------------------------------------------------\n'
+        return self.x_train, self.x_test, self.y_train, self.y_test
 
-# setting dataset for test && train 
-testing_files = ['test']
-training_files = ['train']
+    def Preprocessing(self):
+        x_train, x_test, y_train, y_test = self.LoadingData()
+        print('\nPreprocessing data...')
+        print(f'x_train Raw Training Images size: {len(x_train)}\t|\tShape:{np.shape(x_train)}')
+        print(f'y_train Raw Training Label size: {len(y_train)}\t|\tShape:{np.shape(y_train)}\t|\tUnique Labels:{np.unique(y_train)}')
+        print(f'x_test Raw Testing Images size: {len(x_test)}\t|\tShape:{np.shape(x_test)}')
+        print(f'y_test Raw Testing Label size: {len(y_test)}\t|\tShape:{np.shape(y_test)}\t|\tUnique Labels:{np.unique(y_test)}\n')
 
-#load data from csv && data preprocessing
-print(lines)
+        Raw_Data = [x_train, x_test]
+        Images = [self.x_trainImages, self.x_testImages]
 
-print('Loading data...')
-for i in testing_files:
-    df = pd.read_csv('D:\\Alize\\MyWorkSpace\\Python\\Python_split_test\\Datasets\\' + str(i) + '.csv', encoding="utf8", on_bad_lines='warn')
-    for row in range(len(df)):
-        y_test.append(df.iloc[row, -1])
-        x_test.append(df.iloc[row, 1:-1])
+        # Preprocessing
+        num = 0
+        time.sleep(1)
+        for index, f in enumerate(Raw_Data):
+            for i in tqdm(f, desc=f'Preprocessing {index}', total=len(f), unit=' rows'):
+                frame2D = []
+                for h in range(24):
+                    frame2D.append([])
+                    for w in range(32):
+                        t = i[h * 32 + w]
+                        frame2D[h].append(t)
+                Images[num].append([frame2D])
+            num += 1
 
-for j in training_files:
-    df = pd.read_csv('D:\\Alize\\MyWorkSpace\\Python\\Python_split_test\\Datasets\\' + str(j) + '.csv', encoding="utf8", on_bad_lines='warn')
-    for row in range(len(df)):
-        y_train.append(df.iloc[row, -1])
-        x_train.append(df.iloc[row, 1:-1])
+        print('\nTransforming data...')
+        self.x_trainImages = torch.FloatTensor(Images[0])
+        self.y_trainLabels = torch.LongTensor(y_train)
+        self.x_testImages = torch.FloatTensor(Images[1])
+        self.y_testLabels = torch.LongTensor(y_test)
 
-print('Raw Training Images size: ', len(x_train))
-print('Raw Training Label size: ', len(y_train), ' | Unique Label: ', np.unique(np.array(y_train)))
-print('Raw Testing Images size: ', len(x_test))
-print('Raw Testing Label size: ', len(y_test), ' | Unique Label: ', np.unique(np.array(y_test)))
+        print('Transformed X_trainImages Images size: ', self.x_trainImages.size())
+        print('Transformed X_testImages Images size: ', self.x_testImages.size())
+        print('Transformed Y_trainLabels Labels size: ', self.y_trainLabels.size())
+        print('Transformed Y_testLabels Labels size: ', self.y_testLabels.size())
 
-
-print(lines)
-print('Data preprocessing...')
-x_trainImages = []
-x_testImages = []
-y_trainLabels = []
-y_testLabels = []
-
-Rawdata = [x_train, x_test]
-data = [x_trainImages, x_testImages]
-
-num = 0
-for d in Rawdata:
-    # Data Transforming
-    for i in d:
-        frame2D = []
-        for h in range(24):
-            frame2D.append([])
-            for w in range(32):
-                t = i[h * 32 + w]
-                frame2D[h].append(t)
-
-        data[num].append([frame2D])
-
-    num += 1
-
-
-x_trainImages = torch.FloatTensor(x_trainImages)
-y_trainLabels = torch.LongTensor(y_train)
-x_testImages = torch.FloatTensor(x_testImages)
-y_testLabels = torch.LongTensor(y_test)
-    
-# Data Loader
-print('Transformed X_trainImages Images size: ', x_trainImages.size())
-print('Transformed Y_trainLabels Labels size: ', y_trainLabels.size())
-print('Transformed X_testImages Images size: ', x_testImages.size())
-print('Transformed Y_testLabels Labels size: ', y_testLabels.size())
-
-# Selecting the appropriate training device
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
-print(lines)
-print('Using {} device'.format(device))
-model = CNN().to(device)
-
-# Hyperparameters
-num_epochs = 200
-learning_rate = 0.001
-weight_decay = 0.01
-batch_size = 1000
-criterion = torch.nn.CrossEntropyLoss()
-
-# test loop
+        return self.x_trainImages, self.x_testImages, self.y_trainLabels, self.y_testLabels
 
 
-# Model Setting
-model = CNN().to(device)
-optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
+class Training:
+    def __init__(self, file_train=[], file_test=[], epochs=10, n_iters=3000 , batch_size=32, learning_rate=0.001, roundLoop=1):
+        self.dataTransformed = dataUitls([i for i in file_train], [i for i in file_test]).Preprocessing()
+        self.epochs = epochs
+        # self.n_iters = n_iters
+        self.batch_size = batch_size
+        self.learning_rate = learning_rate
 
-# fold for the training set
-kf = KFold(n_splits=10, shuffle=True)
+        self.roundLoop = roundLoop
 
-# get the training set
-train_set = data_utils.TensorDataset(x_trainImages, y_trainLabels)
-train_loader = data_utils.DataLoader(train_set, batch_size=1000, shuffle=True)
+        self.train_scores = []
+        self.test_scores = []
 
-# get the test set
-# test_set = data_utils.TensorDataset(x_testImages, y_testLabels)
-# test_loader = data_utils.DataLoader(test_set, batch_size=1000, shuffle=True)
+    def train(self):
+        # epoch = self.n_iters / (len(self.dataTransformed[0]) / self.batch_size)
+        epochs = int(self.epochs)
+        batch_size = self.batch_size
+        learning_rate = self.learning_rate
 
-training_set = ConcatDataset([train_loader.dataset])
-# testing_set = ConcatDataset([test_loader.dataset])
+        roundLoop = self.roundLoop
 
-# Training loss and accuracy
-train_loss_list = []
-test_acc_list = []
+        x_trainImages, x_testImages, y_trainLabels, y_testLabels = self.dataTransformed
 
-# Test loss and accuracy
+        train_set = data_utils.TensorDataset(x_trainImages, y_trainLabels)
+        train_loader = data_utils.DataLoader(train_set, batch_size=batch_size, shuffle=True)
 
-results = {}
+        test_set = data_utils.TensorDataset(x_testImages, y_testLabels)
+        test_loader = data_utils.DataLoader(test_set, batch_size=batch_size, shuffle=True)
 
-# start training
-print(lines)
-print('Start training...')
+        # setting Device
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-for i in range(1):
-    for fold, (images, Label) in enumerate(kf.split(training_set)):
+        print('\nParameters:')
+        print(f'Epochs: {epochs}\t|\tBatch Size: {batch_size}\t|\tLearning Rate: {learning_rate}\t|\tDevice: {device}\n')
 
-        print(f'{lines}FOLD {fold}')
-        # Sample elements randomly from a given list of ids, no replacement.
-        train_subsampler = torch.utils.data.SubsetRandomSampler(images)
-        test_subsampler = torch.utils.data.SubsetRandomSampler(Label)
+        model = CNN()
+        model.to(device)
 
-        # Define data loaders for training and testing data in this fold
-        train_load = torch.utils.data.DataLoader(training_set, batch_size=100, sampler=train_subsampler)
-        test_load = torch.utils.data.DataLoader(training_set, batch_size=100, sampler=test_subsampler)
+        criterion = torch.nn.CrossEntropyLoss()
+        optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
-        for epoch in range(num_epochs):
+        print('Model Summary:')
+        for i in range(len(list(model.parameters()))):
+            print(f'{list(model.parameters())[i].size()}')
 
-            train_loss = 0.0
-            for i, data in enumerate(train_load, 0):
-                inputs, labels = data
-                optimizer.zero_grad()
+        print('\nTraining...')
+        roundloop = [int(i) for i in range(1, roundLoop)]
 
-                # tell model to train
-                model.train()
+        for round in roundloop:
+            for epoch in range(epochs):
 
-                # Extracting images and target labels for the batch being iterated
-                inputs, labels = inputs.to(device), labels.to(device)
+                train_total = 0.0
+                train_loss = 0.0
+                train_correct = 0.0
 
-                # Calculating the model output and the cross entropy loss
-                outputs = model(inputs)
-                loss = criterion(outputs, labels)
+                for batch_id, (data, label) in enumerate(train_loader):
+                    data = data.to(device)
+                    label = label.to(device)
+                    optimizer.zero_grad()
+                    output = model(data)
+                    loss = criterion(output, label)
+                    loss.backward()
+                    optimizer.step()
+                    train_loss += loss.item()
 
-                # Updating weights according to calculated loss
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
-                train_loss += loss.item()
+                    _, predicted = torch.max(output.data, 1)
+                    train_total += label.size(0)
+                    train_correct += (predicted == label).sum().item()
 
-            train_loss_list.append(train_loss / len(train_load))
-            if epoch % 2 == 0:
-                print('Epoch: {}\{} \tTraining Loss: {:.6f}'.format(epoch + 2, num_epochs, train_loss / len(train_load)))
-            # print(f"Training loss = {train_loss_list[-1]}")
+                train_accuracy = 100 * train_correct / train_total
+                self.train_scores.append(train_accuracy)
 
+                test_total = 0.0
+                test_loss = 0.0
+                test_correct = 0.0
 
-        test_acc = 0.0
-        total = 0.0
+                with torch.no_grad():
+                    for batch_id, (data, label) in enumerate(test_loader):
+                        data = data.to(device)
+                        label = label.to(device)
+                        output = model(data)
+                        loss = criterion(output, label)
+                        test_loss += loss.item()
 
+                        _, predicted = torch.max(output.data, 1)
+                        test_total += label.size(0)
+                        test_correct += (predicted == label).sum().item()
 
-
-        model.eval()
-
-        with torch.no_grad():
-            print('Starting testing...')
-            for i, data in enumerate(test_load, 0):
-
-                inputs, labels = data
-
-                # Extracting images and target labels for the batch being iterated
-                inputs, y_true = inputs.to(device), labels.to(device)
-
-                # Calculating the model output and the cross entropy loss
-                outputs = model(inputs)
-
-                # Calculating the accuracy of the model
-                _, predicted = torch.max(outputs.data, 1)
-                total += (predicted == y_true).sum().item()
+                        # if batch_id % 5 == 0:
+                        #     print(predicted.cpu().numpy(), label.cpu().numpy())
 
 
-                test_acc_list.append(total / len(test_load))
-            print(f"Test acc for fold: {fold+1}: {sum(test_acc_list)/len(test_acc_list)}")
-        results[fold] = sum(test_acc_list)/len(test_acc_list)
+                    test_accuracy = 100 * test_correct / test_total
+                    self.test_scores.append(test_accuracy)
 
+                if epoch % 2 == 0:
+                    print(f'Round {round} Epoch {epoch} | Train Loss: {train_loss / train_total:.10f} | Train Accuracy: {train_accuracy:.10f} | Test Accuracy: {test_accuracy:.10f}')
 
-    print(f'K-FOLD CROSS VALIDATION RESULTS FOR {fold} FOLDS')
-    print('--------------------------------')
-    sum = 0.0
-    for key, value in results.items():
-        print(f'Fold {key}: {value} %')
-        sum += value
-    print(f'Average: {sum / len(results.items())} %')
-
-    print(' ---- Model Testing End ---- ', '\n')
+        print('\nTraining Finished!')
+        plt.grid(b=True, which='major', axis='both', c='0.95', ls='-', linewidth=1.0, zorder=0)
+        plt.axhline(0.90, color="gold", linestyle="--", alpha=0.5, linewidth=1.0, label='base line')
+        plt.title("cnn")
+        plt.plot(roundloop, self.train_scores, '--', label='Train', color="darkgreen", alpha=0.5, linewidth=1.0)
+        plt.plot(roundloop, self.test_scores, '--', label='Test', color="maroon", alpha=0.5, linewidth=1.0)
+        plt.xticks(rotation=45, fontsize=10)
+        plt.ylabel('Accuracy', fontsize=10)
+        plt.xlabel('Times', fontsize=10)
+        plt.legend(fontsize=12, loc='lower right')
+        plt.show()
 
 
 
+
+if __name__ == '__main__':
+    # 'training-merge'
+    # 'testing-merge'
+    Training(
+        file_train=['even-merge'],
+        file_test=['odd-merge'],
+
+        epochs=200,
+        batch_size=100,
+        learning_rate=0.001,
+
+        roundLoop=50
+
+    ).train()
