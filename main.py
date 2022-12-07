@@ -1,8 +1,8 @@
 import time
 
 import numpy as np
-
 import torch
+
 import torch.utils.data as data_utils
 
 from model import CNN
@@ -13,6 +13,8 @@ from rich.console import Console
 from tqdm import tqdm
 
 console = Console()
+
+lines = "-------------------------------------------------------------------------------\n"
 
 
 # from rich_dataframe import prettify
@@ -36,19 +38,15 @@ class dataUitls:
 
     def LoadingData(self):
         # reading the csv files testings set
-        console.print('Loading data...\n')
+        console.print(f'\n{lines}Loading data...')
         for i in self.files:
+            df = pd.read_csv(f'.\\Dataset\\{i}.csv', encoding="utf8", on_bad_lines='warn')
             if (i in self.training_files):
                 # training
-                df = pd.read_csv(f'.\\Dataset\\{i}.csv', encoding="utf8",
-                                 on_bad_lines='warn')
                 for row in tqdm(range(len(df)), desc=f"Loading {i}\t", total=len(df), unit=" rows"):
                     self.y_train.append(df.iloc[row, -1])
                     self.x_train.append(df.iloc[row, 1:-1])
             else:
-                # testing
-                df = pd.read_csv(f'.\\Dataset\\{i}.csv', encoding="utf8",
-                                 on_bad_lines='warn')
                 for row in tqdm(range(len(df)), desc=f"Loading {i}\t", total=len(df), unit=" rows"):
                     self.y_test.append(df.iloc[row, -1])
                     self.x_test.append(df.iloc[row, 1:-1])
@@ -57,18 +55,19 @@ class dataUitls:
 
     def Preprocessing(self):
         x_train, x_test, y_train, y_test = self.LoadingData()
-        print('\nPreprocessing data...')
+        print(f'{lines}Preprocessing data...')
         print(f'x_train Raw Training Images size: {len(x_train)}\t|\tShape:{np.shape(x_train)}')
-        print(f'y_train Raw Training Label size: {len(y_train)}\t|\tShape:{np.shape(y_train)}\t|\tUnique Labels:{np.unique(y_train)}')
-        print(f'x_test Raw Testing Images size: {len(x_test)}\t|\tShape:{np.shape(x_test)}')
-        print(f'y_test Raw Testing Label size: {len(y_test)}\t|\tShape:{np.shape(y_test)}\t|\tUnique Labels:{np.unique(y_test)}\n')
+        print(f'y_train Raw Training Label  size: {len(y_train)}\t|\tShape:{np.shape(y_train)}\t|\tUnique Labels:{np.unique(y_train)}')
+        print(f'x_test  Raw Testing  Images size: {len(x_test)}\t|\tShape:{np.shape(x_test)}')
+        print(f'y_test  Raw Testing  Label  size: {len(y_test)}\t|\tShape:{np.shape(y_test)}\t|\tUnique Labels:{np.unique(y_test)}\n')
 
         Raw_Data = [x_train, x_test]
         Images = [self.x_trainImages, self.x_testImages]
 
         # Preprocessing
         num = 0
-        time.sleep(1)
+        time.sleep(1.5)
+        print('Starting Preprocessing data...')
         for index, f in enumerate(Raw_Data):
             for i in tqdm(f, desc=f'Preprocessing {index}', total=len(f), unit=' rows'):
                 frame2D = []
@@ -95,10 +94,11 @@ class dataUitls:
 
 
 class Training:
-    def __init__(self, file_train=[], file_test=[], epochs=10, n_iters=3000 , batch_size=32, learning_rate=0.001, roundLoop=1):
+    def __init__(self, file_train=[], file_test=[], epochs=10, n_iters=3000, batch_size=32, learning_rate=0.001,
+                 roundLoop=1):
         self.dataTransformed = dataUitls([i for i in file_train], [i for i in file_test]).Preprocessing()
         self.epochs = epochs
-        # self.n_iters = n_iters
+        self.n_iters = n_iters
         self.batch_size = batch_size
         self.learning_rate = learning_rate
 
@@ -108,8 +108,10 @@ class Training:
         self.test_scores = []
 
     def train(self):
-        # epoch = self.n_iters / (len(self.dataTransformed[0]) / self.batch_size)
-        epochs = int(self.epochs)
+
+
+        epochs = self.n_iters / (len(self.dataTransformed[0]) / self.batch_size)
+        # epochs = int(self.epochs)
         batch_size = self.batch_size
         learning_rate = self.learning_rate
 
@@ -126,24 +128,26 @@ class Training:
         # setting Device
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-        print('\nParameters:')
-        print(f'Epochs: {epochs}\t|\tBatch Size: {batch_size}\t|\tLearning Rate: {learning_rate}\t|\tDevice: {device}\n')
+        print(f'{lines}Parameters:')
+        print(
+            f'Epochs: {int(epochs)}\t|\tBatch Size: {batch_size}\t|\tLearning Rate: {learning_rate}\t|\tDevice: {device}')
 
         model = CNN()
         model.to(device)
 
         criterion = torch.nn.CrossEntropyLoss()
-        optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+        optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate)
 
-        print('Model Summary:')
+        print(f'{lines}Model Summary:')
         for i in range(len(list(model.parameters()))):
             print(f'{list(model.parameters())[i].size()}')
 
-        print('\nTraining...')
+        print(f'{lines}Training...')
         roundloop = [int(i) for i in range(1, roundLoop)]
 
         for round in roundloop:
-            for epoch in range(epochs):
+            print(lines)
+            for epoch in range(int(epochs)):
 
                 train_total = 0.0
                 train_loss = 0.0
@@ -171,26 +175,24 @@ class Training:
                 test_correct = 0.0
 
                 with torch.no_grad():
-                    for batch_id, (data, label) in enumerate(test_loader):
-                        data = data.to(device)
-                        label = label.to(device)
-                        output = model(data)
-                        loss = criterion(output, label)
+                    for batch_id, (test_data, test_label) in enumerate(test_loader):
+                        test_data = test_data.to(device)
+                        test_label = test_label.to(device)
+                        output = model(test_data)
+                        loss = criterion(output, test_label)
                         test_loss += loss.item()
 
                         _, predicted = torch.max(output.data, 1)
-                        test_total += label.size(0)
-                        test_correct += (predicted == label).sum().item()
-
-                        # if batch_id % 5 == 0:
-                        #     print(predicted.cpu().numpy(), label.cpu().numpy())
-
+                        test_total += test_label.size(0)
+                        test_correct += (predicted == test_label).sum().item()
 
                     test_accuracy = 100 * test_correct / test_total
                     self.test_scores.append(test_accuracy)
 
                 if epoch % 2 == 0:
-                    print(f'Round {round} Epoch {epoch} | Train Loss: {train_loss / train_total:.10f} | Train Accuracy: {train_accuracy:.10f} | Test Accuracy: {test_accuracy:.10f}')
+                    train_loss = train_loss / train_total
+                    print(f'Round {round} Epoch {epoch}\t | Train Loss: {train_loss:.10f} | Train Accuracy: {train_accuracy:.10f} | Test Accuracy: {test_accuracy:.10f}')
+                    plotting(epoch, train_loss, train_accuracy, test_accuracy).plot_on_test()
 
         print('\nTraining Finished!')
         plt.grid(b=True, which='major', axis='both', c='0.95', ls='-', linewidth=1.0, zorder=0)
@@ -205,8 +207,6 @@ class Training:
         plt.show()
 
 
-
-
 if __name__ == '__main__':
     # 'training-merge'
     # 'testing-merge'
@@ -215,7 +215,8 @@ if __name__ == '__main__':
         file_test=['odd-merge'],
 
         epochs=200,
-        batch_size=100,
+        n_iters=3000,
+        batch_size=1000,
         learning_rate=0.001,
 
         roundLoop=50
